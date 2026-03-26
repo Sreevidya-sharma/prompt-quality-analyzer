@@ -100,6 +100,7 @@ def _run_pipeline_single(
     model: ModelAdapter,
     persist: bool = True,
     dataset_snapshot_id: str | None = None,
+    user_id: str = "anonymous",
 ) -> tuple[dict[str, Any], bool]:
     run_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
@@ -141,6 +142,7 @@ def _run_pipeline_single(
     )
     score = round((ed_score + sq_score) / 2.0, 6)
 
+    uid = str(user_id or "").strip() or "anonymous"
     out: dict[str, Any] = {
         "run_id": run_id,
         "created_at": created_at,
@@ -159,6 +161,7 @@ def _run_pipeline_single(
         "dataset_snapshot_id": dataset_snapshot_id,
         "failure_tags": [],
         "failure_severity": "",
+        "user_id": uid,
     }
 
     logged = False
@@ -193,6 +196,7 @@ def run_pipeline_dataset(
     config: dict[str, Any],
     model: ModelAdapter,
     persist: bool = True,
+    user_id: str = "anonymous",
 ) -> list[dict[str, Any]]:
     from src.features.promptQuality.curate_engine.ingestion.ingestion_pipeline import (
         run_ingestion_pipeline,
@@ -209,6 +213,7 @@ def run_pipeline_dataset(
             model=model,
             persist=persist,
             dataset_snapshot_id=dataset_snapshot_id,
+            user_id=user_id,
         )
         out.append(
             {
@@ -233,6 +238,7 @@ def run_pipeline(
     source_config: dict[str, Any] | None = None,
     evaluation_mode: bool | None = None,
     evaluation_sample_n: int | None = None,
+    user_id: str = "anonymous",
 ) -> tuple[dict[str, Any], bool] | list[dict[str, Any]] | dict[str, Any]:
     """
     Single-record: infer → curate(response) → M2 gate → M1/M2 → optional persist.
@@ -253,8 +259,12 @@ def run_pipeline(
                 sn = None
         return run_evaluation_suite(model, config, sample_n=sn)
     if dataset_mode and source_config is not None:
-        return run_pipeline_dataset(source_config, config=config, model=model, persist=persist)
-    return _run_pipeline_single(input_text, config=config, model=model, persist=persist)
+        return run_pipeline_dataset(
+            source_config, config=config, model=model, persist=persist, user_id=user_id
+        )
+    return _run_pipeline_single(
+        input_text, config=config, model=model, persist=persist, user_id=user_id
+    )
 
 
 if __name__ == "__main__":

@@ -429,15 +429,52 @@
   <script>
     const MAX_PROMPT_LEN = 140;
     const BASE_URL = "https://prompt-quality-analyzer.onrender.com";
-    function getUserIdFromURL() {
-      const params = new URLSearchParams(window.location.search);
-      return params.get("user_id") || "anonymous";
-    }
-    if (!localStorage.getItem("userId")) {
-      localStorage.setItem("userId", "user_" + crypto.randomUUID())
+    let userId = "anonymous";
+
+    async function getUserIdFromExtension() {
+      const fromUrl = () => (new URLSearchParams(window.location.search).get("user_id") || "").trim();
+      const fallbackUrl = () => fromUrl() || "anonymous";
+
+      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+        return new Promise((resolve) => {
+          try {
+            chrome.storage.local.get(["userId"], (r) => {
+              if (chrome.runtime && chrome.runtime.lastError) {
+                resolve(fallbackUrl());
+                return;
+              }
+              const id = r.userId && String(r.userId).trim();
+              resolve(id || fallbackUrl());
+            });
+          } catch (_) {
+            resolve(fallbackUrl());
+          }
+        });
+      }
+
+      return new Promise((resolve) => {
+        let settled = false;
+        const t = setTimeout(() => finish(fallbackUrl()), 200);
+        function finish(v) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(t);
+          window.removeEventListener("message", onMsg);
+          resolve(v);
+        }
+        function onMsg(ev) {
+          if (ev.origin !== window.location.origin) return;
+          if (ev.source !== window) return;
+          if (ev.data?.source !== "pqa-extension" || ev.data?.type !== "PQA_USER_ID") return;
+          const raw = ev.data.userId;
+          if (raw !== undefined && raw !== null && typeof raw !== "string") return;
+          const id = typeof raw === "string" ? raw.trim() : "";
+          finish(id || fallbackUrl());
+        }
+        window.addEventListener("message", onMsg);
+      });
     }
 
-    const USER_ID = localStorage.getItem("userId")
     const CHART_COLORS = {
       ed: "rgb(61, 139, 253)",
       sq: "rgb(0, 200, 180)",
@@ -790,7 +827,6 @@
 
     async function loadDashboard() {
       const status = document.getElementById("status");
-      const userId = getUserIdFromURL();
       const statsEndpoint = statsUrl(userId);
       const recentEndpoint = recentUrl(userId);
       status.textContent = "Loading dashboard...";
@@ -862,11 +898,16 @@
       }
     }
 
-    document.getElementById("f-range").addEventListener("change", loadDashboard);
-    document.getElementById("f-decision").addEventListener("change", loadDashboard);
+    async function bootstrap() {
+      userId = await getUserIdFromExtension();
+      console.log("Dashboard userId:", userId);
+      document.getElementById("f-range").addEventListener("change", loadDashboard);
+      document.getElementById("f-decision").addEventListener("change", loadDashboard);
+      loadDashboard();
+      setInterval(loadDashboard, 5000);
+    }
 
-    loadDashboard();
-    setInterval(loadDashboard, 5000);
+    bootstrap();
   </script>
 </body>
 </html>

@@ -7,7 +7,9 @@
   "permissions": ["storage"],
 
   "host_permissions": [
-    "https://prompt-quality-analyzer.onrender.com/*"
+    "https://prompt-quality-analyzer.onrender.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
   ],
 
   "background": {
@@ -22,6 +24,15 @@
       ],
       "js": ["content.js"],
       "css": ["content.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://prompt-quality-analyzer.onrender.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["dashboard-bridge.js"],
       "run_at": "document_idle"
     }
   ],

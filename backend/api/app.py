@@ -11,12 +11,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, StrictStr
 
+from backend.auth.email_auth import init_auth_db, router as auth_router
 from backend.db.storage import get_recent_runs, get_stats, init_db, list_alerts_recent, save_run
 from src.features.analysis.drift.time_series import get_drift_panel
 from src.features.logging.scheduler.scheduler import (
@@ -49,6 +50,10 @@ async def lifespan(app: FastAPI):
         init_db(CONFIG)
     except Exception:
         logger.exception("Storage init failed; endpoints use degraded empty results")
+    try:
+        init_auth_db()
+    except Exception:
+        logger.exception("Auth DB init failed")
     app.state.config = CONFIG
     app.state.model = ModelAdapter()
     start_scheduler(CONFIG, app.state.model)
@@ -81,6 +86,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
 
 
 class AnalyzeRequest(BaseModel):
@@ -224,18 +231,28 @@ def _dec(v: str) -> str:
     return t if t in ("accept", "reject", "review", "all") else "all"
 
 
+def _effective_user_id(user_id_query: str | None, x_user_id: str | None) -> str:
+    q = (user_id_query or "").strip()
+    if q:
+        return q
+    h = (x_user_id or "").strip()
+    return h if h else "anonymous"
+
+
 @app.get("/stats")
 def stats(
     time_range: str = Query("all", alias="range"),
     decision: str = Query("all"),
-    user_id: str = Query("anonymous"),
+    user_id: str | None = Query(None),
+    x_user_id: str | None = Header(None, alias="x-user-id"),
 ):
-    print(f"Incoming request: GET /stats range={time_range} decision={decision} user_id={user_id}")
-    logger.info("GET /stats range=%s decision=%s user_id=%s", time_range, decision, user_id)
-    base = get_stats(_tr(time_range), _dec(decision), user_id=user_id)
+    uid = _effective_user_id(user_id, x_user_id)
+    print(f"Incoming request: GET /stats range={time_range} decision={decision} user_id={uid}")
+    logger.info("GET /stats range=%s decision=%s user_id=%s", time_range, decision, uid)
+    base = get_stats(_tr(time_range), _dec(decision), user_id=uid)
     panel = get_drift_panel(CONFIG)
-    print(f"Response /stats total_runs={base.get('total_runs', 0)} user_id={user_id}")
-    logger.info("GET /stats response total_runs=%s user_id=%s", base.get("total_runs", 0), user_id)
+    print(f"Response /stats total_runs={base.get('total_runs', 0)} user_id={uid}")
+    logger.info("GET /stats response total_runs=%s user_id=%s", base.get("total_runs", 0), uid)
     return {**base, **panel}
 
 
@@ -267,10 +284,12 @@ def recent(
     limit: int | None = Query(None, ge=1, le=500),
     time_range: str = Query("all", alias="range"),
     decision: str = Query("all"),
-    user_id: str = Query("anonymous"),
+    user_id: str | None = Query(None),
+    x_user_id: str | None = Header(None, alias="x-user-id"),
 ):
     lim = limit if limit is not None else int(_api.get("recent_runs_limit", 20))
-    return get_recent_runs(lim, _tr(time_range), _dec(decision), user_id=user_id)
+    uid = _effective_user_id(user_id, x_user_id)
+    return get_recent_runs(lim, _tr(time_range), _dec(decision), user_id=uid)
 
 
 @app.get("/dashboard")
@@ -302,12 +321,14 @@ def analyze(data: AnalyzeRequest, request: Request):
         payload_source,
         request_dump,
     )
-    print(f"Incoming request: POST /analyze prompt={prompt_text[:120]!r}")
+    user_id = (request.headers.get("x-user-id") or "").strip() or "anonymous"
+    print(f"Incoming request: POST /analyze prompt={prompt_text[:120]!r} user_id={user_id}")
     body_preview = prompt_text[:200] + ("..." if len(prompt_text) > 200 else "")
     logger.info(
-        "POST /analyze input text_len=%d preview=%r",
+        "POST /analyze input text_len=%d preview=%r user_id=%s",
         len(prompt_text),
         body_preview,
+        user_id,
     )
 
     try:
@@ -317,6 +338,7 @@ def analyze(data: AnalyzeRequest, request: Request):
             config=cfg,
             model=model,
             persist=True,
+            user_id=user_id,
         )
         logger.warning("🔥 SAVE RESULT 🔥 %s", result)
         logger.info(
@@ -362,6 +384,7 @@ def analyze(data: AnalyzeRequest, request: Request):
                     "failure_tags": [],
                     "failure_severity": "low",
                     "model_name": "forced-debug",
+                    "user_id": user_id,
                 }
             )
             logger.info("FORCED TEST SAVE RESULT success=%s", forced_ok)

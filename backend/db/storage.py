@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import bcrypt
 import psycopg2
 from psycopg2 import errors as pg_errors
 from psycopg2.extras import Json, RealDictCursor
@@ -106,6 +108,146 @@ def _migrate_failure_columns(conn: Any) -> None:
         logger.warning("failure column migration: %s", e)
     finally:
         cur.close()
+
+
+def _migrate_users_table(conn: Any) -> None:
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL
+            )
+            """
+        )
+        # Migrate any legacy users schema to local auth fields when present.
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ")
+        cur.execute("UPDATE users SET created_at = NOW() WHERE created_at IS NULL")
+        cur.execute("ALTER TABLE users ALTER COLUMN created_at SET NOT NULL")
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name='users' AND column_name='google_id'
+              ) THEN
+                ALTER TABLE users ALTER COLUMN google_id DROP NOT NULL;
+              END IF;
+            END $$;
+            """
+        )
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users (LOWER(email))")
+    except Exception as e:
+        logger.warning("users table migration: %s", e)
+    finally:
+        cur.close()
+
+
+def _normalize_email(email: str) -> str:
+    return str(email or "").strip().lower()
+
+
+def _validate_email(email: str) -> str:
+    em = _normalize_email(email)
+    if not em or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", em):
+        raise ValueError("valid email required")
+    return em
+
+
+def _validate_password(password: str) -> str:
+    pw = str(password or "")
+    if len(pw) < 8:
+        raise ValueError("password must be at least 8 characters")
+    return pw
+
+
+def create_user_with_password(email: str, password: str) -> dict[str, Any]:
+    _ensure_init()
+    if not _db_available:
+        raise RuntimeError("database unavailable")
+
+    em = _validate_email(email)
+    pw = _validate_password(password)
+    hashed = bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    conn = get_db_connection()
+    if conn is None:
+        raise RuntimeError("database unavailable")
+    uid_new = str(uuid.uuid4())
+    ts = datetime.now(timezone.utc)
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO users (id, email, password_hash, created_at)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id, email
+                """,
+                (uid_new, em, hashed, ts),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            if not row:
+                raise RuntimeError("insert returned no row")
+            d = dict(row)
+            return {
+                "id": str(d["id"]),
+                "email": str(d["email"]),
+            }
+    except pg_errors.UniqueViolation as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise ValueError("email already registered") from e
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logger.warning("create_user_with_password failed: %s", e)
+        raise RuntimeError("failed to persist user") from e
+    finally:
+        conn.close()
+
+
+def authenticate_user(email: str, password: str) -> dict[str, Any] | None:
+    _ensure_init()
+    if not _db_available:
+        raise RuntimeError("database unavailable")
+
+    em = _validate_email(email)
+    pw = str(password or "")
+    conn = get_db_connection()
+    if conn is None:
+        raise RuntimeError("database unavailable")
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, email, password_hash FROM users WHERE LOWER(email) = %s LIMIT 1",
+                (em,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            stored_hash = str(row.get("password_hash") or "")
+            if not stored_hash:
+                return None
+            ok = bcrypt.checkpw(pw.encode("utf-8"), stored_hash.encode("utf-8"))
+            if not ok:
+                return None
+            return {"id": str(row["id"]), "email": str(row["email"])}
+    except Exception as e:
+        logger.warning("authenticate_user failed: %s", e)
+        raise RuntimeError("failed to authenticate user") from e
+    finally:
+        conn.close()
 
 
 def _ddl_statements() -> list[str]:
@@ -226,6 +368,7 @@ def init_db(config: dict[str, Any] | None = None, db_path: Path | None = None) -
             for stmt in _ddl_statements():
                 cur.execute(stmt)
             _migrate_failure_columns(conn)
+            _migrate_users_table(conn)
             cur.close()
             _db_available = True
             logger.info("PostgreSQL storage ready using DATABASE_URL")
@@ -257,6 +400,11 @@ def _since_iso(time_range: str) -> str | None:
     return None
 
 
+def _normalize_user_id_for_query(user_id: str | None) -> str:
+    u = str(user_id).strip() if user_id is not None else ""
+    return u if u else "anonymous"
+
+
 def _build_where(since: str | None, decision: str, user_id: str | None = None) -> tuple[str, list[Any]]:
     parts: list[str] = ["1=1"]
     params: list[Any] = []
@@ -267,10 +415,9 @@ def _build_where(since: str | None, decision: str, user_id: str | None = None) -
     if d in ("accept", "reject", "review"):
         parts.append("LOWER(TRIM(decision)) = %s")
         params.append(d)
-    uid = str(user_id).strip() if user_id is not None else ""
-    if uid:
-        parts.append("user_id = %s")
-        params.append(uid)
+    uid = _normalize_user_id_for_query(user_id)
+    parts.append("user_id = %s")
+    params.append(uid)
     return " AND ".join(parts), params
 
 
@@ -502,7 +649,7 @@ def _filter_runs(
 ) -> list[dict[str, Any]]:
     since_iso = _since_iso(time_range)
     dec = (decision or "all").lower().strip()
-    uid = str(user_id).strip() if user_id is not None else ""
+    uid = _normalize_user_id_for_query(user_id)
     out: list[dict[str, Any]] = []
     for row in rows:
         try:
@@ -519,7 +666,7 @@ def _filter_runs(
         if dec in ("accept", "reject", "review") and d != dec:
             continue
         row_uid = str(row.get("user_id") or "anonymous").strip() or "anonymous"
-        if uid and row_uid != uid:
+        if row_uid != uid:
             continue
         out.append(row)
     return out
@@ -768,8 +915,13 @@ def save_run(run_data: dict[str, Any]) -> bool:
         )
         try:
             rows = _load_runs_json()
+            same_user = [
+                r
+                for r in rows
+                if (str(r.get("user_id") or "anonymous").strip() or "anonymous") == user_id
+            ]
             recent = sorted(
-                rows,
+                same_user,
                 key=lambda x: str(x.get("created_at") or x.get("timestamp") or ""),
                 reverse=True,
             )[:n_recent]
@@ -805,8 +957,8 @@ def save_run(run_data: dict[str, Any]) -> bool:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT prompt FROM runs ORDER BY created_at DESC LIMIT %s",
-                (n_recent,),
+                "SELECT prompt FROM runs WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
+                (user_id, n_recent),
             )
             for (prev_raw,) in cur.fetchall():
                 pn = _normalize_prompt(str(prev_raw))

@@ -1,21 +1,10 @@
+importScripts("user-id.js");
+
 const BASE_URL = "https://prompt-quality-analyzer.onrender.com";
 const API_URL = `${BASE_URL}/analyze`;
 const API_TIMEOUT_MS = 30000;
 
 console.log("🔥 Background script loaded");
-
-function getUserId() {
-  return new Promise((resolve) => {
-    chrome.storage.sync.get(["userId"], (res) => {
-      if (res.userId) return resolve(res.userId);
-
-      const newId = "user_" + crypto.randomUUID();
-      chrome.storage.sync.set({ userId: newId }, () => {
-        resolve(newId);
-      });
-    });
-  });
-}
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   console.log("📩 [BG] Message received:", msg);

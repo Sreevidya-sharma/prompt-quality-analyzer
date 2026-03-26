@@ -28,7 +28,9 @@
         color: #64748b;
         margin-bottom: 4px;
       }
-      input[type="text"] {
+      input[type="text"],
+      input[type="email"],
+      input[type="password"] {
         width: 100%;
         box-sizing: border-box;
         padding: 6px 8px;
@@ -48,21 +50,99 @@
       button:hover {
         background: #f1f5f9;
       }
+      #auth-form {
+        margin-bottom: 10px;
+      }
+      #auth-form .row {
+        display: flex;
+        gap: 8px;
+      }
+      #login-btn,
+      #register-btn {
+        flex: 1;
+        margin-top: 10px;
+        margin-bottom: 0;
+        padding: 8px 12px;
+        font-weight: 600;
+        color: #fff;
+      }
+      #login-btn:hover {
+        background: #0d9488;
+      }
+      #login-btn {
+        border: 1px solid #0d9488;
+        background: #14b8a6;
+      }
+      #register-btn {
+        border: 1px solid #0f766e;
+        background: #0f766e;
+      }
+      #register-btn:hover {
+        background: #115e59;
+      }
+      #user-info {
+        font-size: 12px;
+        color: #0f172a;
+        margin: 0 0 10px;
+        padding: 8px 10px;
+        line-height: 1.4;
+        word-break: break-all;
+        background: #f1f5f9;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+      }
+      #user-info:empty {
+        display: none;
+      }
+      #openDashboard {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 0;
+        margin-bottom: 12px;
+        padding: 8px 12px;
+        font-weight: 600;
+        border: 1px solid #2563eb;
+        background: #3b82f6;
+        color: #fff;
+      }
+      #openDashboard:hover {
+        background: #2563eb;
+      }
       #saved {
         font-size: 11px;
         color: #16a34a;
         margin-top: 6px;
         min-height: 1.2em;
       }
+      #auth-status {
+        font-size: 11px;
+        margin: 6px 0 10px;
+        min-height: 1.2em;
+        color: #b91c1c;
+      }
     </style>
   </head>
   <body>
     <h1>Prompt Quality Helper</h1>
     <p>Type in ChatGPT, Gemini, or any site. Feedback appears bottom-right after you pause typing.</p>
+    <div id="auth-form">
+      <label for="email">Email</label>
+      <input id="email" type="email" spellcheck="false" autocomplete="username" />
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" />
+      <div class="row">
+        <button type="button" id="login-btn">Login</button>
+        <button type="button" id="register-btn">Register</button>
+      </div>
+    </div>
+    <div id="auth-status" aria-live="polite"></div>
+    <div id="user-info" aria-live="polite"></div>
+    <button type="button" id="openDashboard">Open Dashboard</button>
     <label for="apiBase">API base URL</label>
     <input id="apiBase" type="text" spellcheck="false" autocomplete="off" />
     <button type="button" id="saveApi">Save</button>
     <p id="saved"></p>
+    <script src="user-id.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
