@@ -129,9 +129,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   openDashboard.addEventListener("click", () => {
     getApiBaseSync((baseClean) => {
-      getUserId().then(() => {
-        chrome.tabs.create({ url: `${baseClean}/dashboard` });
-      });
+      (async () => {
+        const userId = await getUserId();
+        chrome.tabs.create({
+          url: `${baseClean}/dashboard?user_id=${encodeURIComponent(userId)}`,
+        });
+      })();
     });
   });
 

@@ -428,13 +428,14 @@
 
   <script>
     const MAX_PROMPT_LEN = 140;
-    const BASE_URL = "https://prompt-quality-analyzer.onrender.com";
     let userId = "anonymous";
 
-    async function getUserIdFromExtension() {
-      const fromUrl = () => (new URLSearchParams(window.location.search).get("user_id") || "").trim();
-      const fallbackUrl = () => fromUrl() || "anonymous";
+    function fallbackUrl() {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("user_id") || "anonymous";
+    }
 
+    async function getUserIdFromExtension() {
       if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
         return new Promise((resolve) => {
           try {
@@ -455,28 +456,7 @@
           }
         });
       }
-
-      return new Promise((resolve) => {
-        let settled = false;
-        const t = setTimeout(() => finish(fallbackUrl()), 200);
-        function finish(v) {
-          if (settled) return;
-          settled = true;
-          clearTimeout(t);
-          window.removeEventListener("message", onMsg);
-          resolve(v);
-        }
-        function onMsg(ev) {
-          if (ev.origin !== window.location.origin) return;
-          if (ev.source !== window) return;
-          if (ev.data?.source !== "pqa-extension" || ev.data?.type !== "PQA_USER_ID") return;
-          const raw = ev.data.userId;
-          if (raw !== undefined && raw !== null && typeof raw !== "string") return;
-          const id = typeof raw === "string" ? raw.trim() : "";
-          finish(id || fallbackUrl());
-        }
-        window.addEventListener("message", onMsg);
-      });
+      return fallbackUrl();
     }
 
     const CHART_COLORS = {
@@ -495,13 +475,13 @@
 
     function statsUrl() {
       const p = qsParams();
-      return BASE_URL + "/stats?" + p.toString();
+      return "/stats?" + p.toString();
     }
 
     function recentUrl() {
       const p = qsParams();
       p.set("limit", "20");
-      return BASE_URL + "/recent?" + p.toString();
+      return "/recent?" + p.toString();
     }
 
     let chartEd = null;
@@ -834,7 +814,7 @@
       status.textContent = "Loading dashboard...";
       status.classList.remove("err");
       try {
-        console.log("Dashboard fetching:", { statsEndpoint, recentEndpoint, userId });
+        console.log("Dashboard fetching:", { statsEndpoint, recentEndpoint });
         const [statsRes, recentRes] = await Promise.all([
           fetch(statsEndpoint, {
             headers: { "x-user-id": userId },
@@ -898,7 +878,7 @@
 
     async function bootstrap() {
       userId = await getUserIdFromExtension();
-      console.log("Dashboard userId:", userId);
+      console.log("DASHBOARD USER ID:", userId);
       document.getElementById("f-range").addEventListener("change", loadDashboard);
       document.getElementById("f-decision").addEventListener("change", loadDashboard);
       loadDashboard();
