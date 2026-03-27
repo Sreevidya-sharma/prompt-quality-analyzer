@@ -69,13 +69,19 @@ def _api_section() -> dict[str, Any]:
 app = FastAPI(lifespan=lifespan)
 _api = _api_section()
 
-_STATIC_DIR = str(_BASE / "public")
-if Path(_STATIC_DIR).is_dir():
+STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "public"
+
+print("STATIC DIR:", STATIC_DIR)
+print("EXISTS:", STATIC_DIR.exists())
+
+if STATIC_DIR.exists():
     app.mount(
         "/static",
-        StaticFiles(directory=_STATIC_DIR),
+        StaticFiles(directory=str(STATIC_DIR)),
         name="static",
     )
+else:
+    print("STATIC DIR NOT FOUND:", STATIC_DIR)
 
 app.add_middleware(
     CORSMiddleware,
