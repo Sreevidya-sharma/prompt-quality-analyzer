@@ -431,8 +431,21 @@
     let userId = "anonymous";
 
     function fallbackUrl() {
-      const params = new URLSearchParams(window.location.search);
-      return params.get("user_id") || "anonymous";
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get("user_id");
+
+        console.log("URL PARAM user_id:", id);
+
+        if (id && typeof id === "string" && id.trim()) {
+          return id.trim();
+        }
+
+        return "anonymous";
+      } catch (e) {
+        console.error("URL parse failed:", e);
+        return "anonymous";
+      }
     }
 
     async function getUserIdFromExtension() {
@@ -445,13 +458,20 @@
                 return;
               }
               if (r.email && typeof r.email === "string" && r.email.trim()) {
+                console.log("Using email from storage:", r.email);
                 resolve(r.email.trim());
                 return;
               }
-              const id = r.userId && String(r.userId).trim();
-              resolve(id || fallbackUrl());
+              if (r.userId && String(r.userId).trim()) {
+                console.log("Using userId from storage:", r.userId);
+                resolve(String(r.userId).trim());
+                return;
+              }
+              console.log("Falling back to URL");
+              resolve(fallbackUrl());
             });
-          } catch (_) {
+          } catch (e) {
+            console.error("Storage error:", e);
             resolve(fallbackUrl());
           }
         });
@@ -877,6 +897,7 @@
     }
 
     async function bootstrap() {
+      console.log("FULL URL:", window.location.href);
       userId = await getUserIdFromExtension();
       console.log("DASHBOARD USER ID:", userId);
       document.getElementById("f-range").addEventListener("change", loadDashboard);
