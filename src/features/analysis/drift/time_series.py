@@ -25,12 +25,12 @@ def get_recent_metrics(limit: int) -> list[dict[str, Any]]:
     return get_metrics_over_time(limit=limit)
 
 
-def get_metrics_window(window_size: int) -> list[dict[str, Any]]:
-    return _get_metrics_window_storage(window_size)
+def get_metrics_window(window_size: int, user_id: str | None = None) -> list[dict[str, Any]]:
+    return _get_metrics_window_storage(window_size, user_id=user_id)
 
 
-def get_m1_m2_trend(limit: int = 30) -> list[dict[str, Any]]:
-    rows = get_metrics_over_time(limit=limit)
+def get_m1_m2_trend(limit: int = 30, user_id: str | None = None) -> list[dict[str, Any]]:
+    rows = get_metrics_over_time(limit=limit, user_id=user_id)
     out: list[dict[str, Any]] = []
     for r in rows:
         out.append(
@@ -45,14 +45,14 @@ def get_m1_m2_trend(limit: int = 30) -> list[dict[str, Any]]:
     return out
 
 
-def get_drift_panel(config: dict[str, Any]) -> dict[str, Any]:
+def get_drift_panel(config: dict[str, Any], user_id: str | None = None) -> dict[str, Any]:
     from src.features.analysis.drift.drift_detector import detect_drift
 
     dcfg = config.get("drift") if isinstance(config.get("drift"), dict) else {}
     w = int(dcfg.get("drift_window_size", 10))
-    window = get_metrics_window(w)
+    window = get_metrics_window(w, user_id=user_id)
     drift_status = detect_drift(window, config)
-    trend = get_m1_m2_trend(max(30, w + 5))
+    trend = get_m1_m2_trend(max(30, w + 5), user_id=user_id)
     return {
         "metrics_m1_m2_trend": trend,
         "drift_status": drift_status,

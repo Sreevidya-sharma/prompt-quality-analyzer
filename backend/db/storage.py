@@ -1331,13 +1331,17 @@ def get_stats(time_range: str = "all", decision: str = "all", user_id: str | Non
                 for t in _parse_failure_tags(r.get("failure_tags")):
                     fd[t] = fd.get(t, 0) + 1
 
+            uid_stats = _normalize_user_id_for_query(user_id)
             cur.execute(
                 """
-                SELECT failure_distribution FROM metrics
-                WHERE failure_distribution IS NOT NULL
-                ORDER BY timestamp DESC
+                SELECT m.failure_distribution
+                FROM metrics m
+                INNER JOIN runs r ON r.id = m.run_id
+                WHERE m.failure_distribution IS NOT NULL AND r.user_id = %s
+                ORDER BY m.timestamp DESC
                 LIMIT 25
-                """
+                """,
+                (uid_stats,),
             )
             for r in cur.fetchall():
                 dist = r.get("failure_distribution")
@@ -1525,8 +1529,12 @@ def store_metric(
         conn.close()
 
 
-def get_metrics_window(window_size: int) -> list[dict[str, Any]]:
-    """Last ``window_size`` metric rows, oldest first (for drift)."""
+def get_metrics_window(window_size: int, user_id: str | None = None) -> list[dict[str, Any]]:
+    """Last ``window_size`` metric rows, oldest first (for drift).
+
+    When ``user_id`` is set, only metrics whose ``run_id`` matches a row in ``runs`` for that user are included.
+    When ``user_id`` is None, all metric rows are considered (e.g. evaluation / internal drift).
+    """
     _ensure_init()
     if not _db_available:
         return []
@@ -1536,19 +1544,37 @@ def get_metrics_window(window_size: int) -> list[dict[str, Any]]:
         return []
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT run_id, timestamp, m1, m2, accuracy
-                FROM (
+            if user_id is None:
+                cur.execute(
+                    """
                     SELECT run_id, timestamp, m1, m2, accuracy
-                    FROM metrics
-                    ORDER BY timestamp DESC
-                    LIMIT %s
-                ) sub
-                ORDER BY timestamp ASC
-                """,
-                (n,),
-            )
+                    FROM (
+                        SELECT run_id, timestamp, m1, m2, accuracy
+                        FROM metrics
+                        ORDER BY timestamp DESC
+                        LIMIT %s
+                    ) sub
+                    ORDER BY timestamp ASC
+                    """,
+                    (n,),
+                )
+            else:
+                uid = _normalize_user_id_for_query(user_id)
+                cur.execute(
+                    """
+                    SELECT run_id, timestamp, m1, m2, accuracy
+                    FROM (
+                        SELECT m.run_id, m.timestamp, m.m1, m.m2, m.accuracy
+                        FROM metrics m
+                        INNER JOIN runs r ON r.id = m.run_id
+                        WHERE r.user_id = %s
+                        ORDER BY m.timestamp DESC
+                        LIMIT %s
+                    ) sub
+                    ORDER BY timestamp ASC
+                    """,
+                    (uid, n),
+                )
             rows = [dict(r) for r in cur.fetchall()]
     except Exception as e:
         logger.warning("get_metrics_window failed: %s", e)
@@ -1564,8 +1590,12 @@ def get_metrics_over_time(
     limit: int = 500,
     *,
     since_iso: str | None = None,
+    user_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Metric samples in chronological order (time series)."""
+    """Metric samples in chronological order (time series).
+
+    When ``user_id`` is set, only metrics linked to that user's runs (via ``run_id``) are included.
+    """
     _ensure_init()
     if not _db_available:
         return []
@@ -1575,31 +1605,62 @@ def get_metrics_over_time(
         return []
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            if since_iso:
-                cur.execute(
-                    """
-                    SELECT run_id, timestamp, m1, m2, accuracy
-                    FROM metrics
-                    WHERE timestamp >= %s
-                    ORDER BY timestamp ASC
-                    LIMIT %s
-                    """,
-                    (since_iso, lim),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT run_id, timestamp, m1, m2, accuracy
-                    FROM (
+            if user_id is None:
+                if since_iso:
+                    cur.execute(
+                        """
                         SELECT run_id, timestamp, m1, m2, accuracy
                         FROM metrics
-                        ORDER BY timestamp DESC
+                        WHERE timestamp >= %s
+                        ORDER BY timestamp ASC
                         LIMIT %s
-                    ) sub
-                    ORDER BY timestamp ASC
-                    """,
-                    (lim,),
-                )
+                        """,
+                        (since_iso, lim),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT run_id, timestamp, m1, m2, accuracy
+                        FROM (
+                            SELECT run_id, timestamp, m1, m2, accuracy
+                            FROM metrics
+                            ORDER BY timestamp DESC
+                            LIMIT %s
+                        ) sub
+                        ORDER BY timestamp ASC
+                        """,
+                        (lim,),
+                    )
+            else:
+                uid = _normalize_user_id_for_query(user_id)
+                if since_iso:
+                    cur.execute(
+                        """
+                        SELECT m.run_id, m.timestamp, m.m1, m.m2, m.accuracy
+                        FROM metrics m
+                        INNER JOIN runs r ON r.id = m.run_id
+                        WHERE m.timestamp >= %s AND r.user_id = %s
+                        ORDER BY m.timestamp ASC
+                        LIMIT %s
+                        """,
+                        (since_iso, uid, lim),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT run_id, timestamp, m1, m2, accuracy
+                        FROM (
+                            SELECT m.run_id, m.timestamp, m.m1, m.m2, m.accuracy
+                            FROM metrics m
+                            INNER JOIN runs r ON r.id = m.run_id
+                            WHERE r.user_id = %s
+                            ORDER BY m.timestamp DESC
+                            LIMIT %s
+                        ) sub
+                        ORDER BY timestamp ASC
+                        """,
+                        (uid, lim),
+                    )
             rows = [dict(r) for r in cur.fetchall()]
     except Exception as e:
         logger.warning("get_metrics_over_time failed: %s", e)

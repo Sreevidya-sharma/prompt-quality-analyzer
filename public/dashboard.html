@@ -438,9 +438,13 @@
       if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
         return new Promise((resolve) => {
           try {
-            chrome.storage.local.get(["userId"], (r) => {
+            chrome.storage.local.get(["email", "userId"], (r) => {
               if (chrome.runtime && chrome.runtime.lastError) {
                 resolve(fallbackUrl());
+                return;
+              }
+              if (r.email && typeof r.email === "string" && r.email.trim()) {
+                resolve(r.email.trim());
                 return;
               }
               const id = r.userId && String(r.userId).trim();
@@ -489,16 +493,14 @@
       return new URLSearchParams({ range, decision });
     }
 
-    function statsUrl(userId) {
+    function statsUrl() {
       const p = qsParams();
-      p.set("user_id", userId);
       return BASE_URL + "/stats?" + p.toString();
     }
 
-    function recentUrl(userId) {
+    function recentUrl() {
       const p = qsParams();
       p.set("limit", "20");
-      p.set("user_id", userId);
       return BASE_URL + "/recent?" + p.toString();
     }
 
@@ -827,24 +829,20 @@
 
     async function loadDashboard() {
       const status = document.getElementById("status");
-      const statsEndpoint = statsUrl(userId);
-      const recentEndpoint = recentUrl(userId);
+      const statsEndpoint = statsUrl();
+      const recentEndpoint = recentUrl();
       status.textContent = "Loading dashboard...";
       status.classList.remove("err");
       try {
-        console.log("Dashboard fetching:", { statsEndpoint, recentEndpoint });
+        console.log("Dashboard fetching:", { statsEndpoint, recentEndpoint, userId });
         const [statsRes, recentRes] = await Promise.all([
-        fetch(statsEndpoint, {
-           headers: {
-            "x-user-id": userId
-          }
-        }),
-        fetch(recentEndpoint, {
-          headers: {
-            "x-user-id": userId
-          }
-        }),
-      ]);
+          fetch(statsEndpoint, {
+            headers: { "x-user-id": userId },
+          }),
+          fetch(recentEndpoint, {
+            headers: { "x-user-id": userId },
+          }),
+        ]);
         const statsText = await statsRes.text();
         const recentText = await recentRes.text();
         const s = statsText ? JSON.parse(statsText) : {};

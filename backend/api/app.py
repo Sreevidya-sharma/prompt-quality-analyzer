@@ -1,8 +1,4 @@
-from backend.auth.email_auth import router as auth_router
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
 from __future__ import annotations
-
-from fastapi.staticfiles import StaticFiles
 
 import logging
 import os
@@ -17,17 +13,17 @@ from fastapi import FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
 from pydantic import BaseModel, Field, StrictStr
 
 from backend.auth.email_auth import init_auth_db, router as auth_router
 from backend.db.storage import get_recent_runs, get_stats, init_db, list_alerts_recent, save_run
+
 from src.features.analysis.drift.time_series import get_drift_panel
-from src.features.logging.scheduler.scheduler import (
-    get_scheduler_status,
-    start_scheduler,
-    stop_scheduler,
-)
+from src.features.logging.scheduler.scheduler import get_scheduler_status, start_scheduler, stop_scheduler
 from src.features.logging.scheduler.triggers import trigger_manual_run
+
 from src.pipeline import run_pipeline
 from src.services.model_adapter import ModelAdapter
 from src.utils.config_loader import load_config
@@ -73,7 +69,7 @@ def _api_section() -> dict[str, Any]:
 app = FastAPI(lifespan=lifespan)
 _api = _api_section()
 
-_STATIC_DIR = str(_BASE / "public" / "static")
+_STATIC_DIR = str(_BASE / "public")
 if Path(_STATIC_DIR).is_dir():
     app.mount(
         "/static",
@@ -234,11 +230,12 @@ def _dec(v: str) -> str:
 
 
 def _effective_user_id(user_id_query: str | None, x_user_id: str | None) -> str:
-    q = (user_id_query or "").strip()
-    if q:
-        return q
+    """Prefer x-user-id header so query params cannot override another user's identity."""
     h = (x_user_id or "").strip()
-    return h if h else "anonymous"
+    if h:
+        return h
+    q = (user_id_query or "").strip()
+    return q if q else "anonymous"
 
 
 @app.get("/stats")
@@ -252,7 +249,7 @@ def stats(
     print(f"Incoming request: GET /stats range={time_range} decision={decision} user_id={uid}")
     logger.info("GET /stats range=%s decision=%s user_id=%s", time_range, decision, uid)
     base = get_stats(_tr(time_range), _dec(decision), user_id=uid)
-    panel = get_drift_panel(CONFIG)
+    panel = get_drift_panel(CONFIG, user_id=uid)
     print(f"Response /stats total_runs={base.get('total_runs', 0)} user_id={uid}")
     logger.info("GET /stats response total_runs=%s user_id=%s", base.get("total_runs", 0), uid)
     return {**base, **panel}
@@ -295,9 +292,11 @@ def recent(
 
 
 @app.get("/dashboard")
-def dashboard():
+def dashboard(request: Request):
+    user_id = (request.headers.get("x-user-id") or "anonymous").strip()
+    logger.info("GET /dashboard user_id=%s", user_id)
     name = str(_api.get("dashboard_file", "dashboard.html"))
-    path = _BASE / "public" / "static" / name
+    path = _BASE / "public" / name
     if not path.is_file():
         return {"error": "dashboard not found", "path": str(path)}
     return FileResponse(path, media_type="text/html")
@@ -323,7 +322,7 @@ def analyze(data: AnalyzeRequest, request: Request):
         payload_source,
         request_dump,
     )
-    user_id = (request.headers.get("x-user-id") or "").strip() or "anonymous"
+    user_id = (request.headers.get("x-user-id") or "anonymous").strip()
     print(f"Incoming request: POST /analyze prompt={prompt_text[:120]!r} user_id={user_id}")
     body_preview = prompt_text[:200] + ("..." if len(prompt_text) > 200 else "")
     logger.info(

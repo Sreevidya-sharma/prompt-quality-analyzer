@@ -1,3 +1,4 @@
+console.log("CONTENT SCRIPT STARTED");
 chrome.runtime.sendMessage({ type: "PING" }, (res) => {
   console.log("Ping response:", res);
 });
@@ -768,17 +769,6 @@ function onGlobalClick(e) {
   sendForAnalysis(text, "submit_click");
 }
 
-function startForceRecheckInterval() {
-  if (forceRecheckIntervalId) return;
-  forceRecheckIntervalId = setInterval(() => {
-    if (document.hidden) return;
-    const el = getActiveInput();
-    if (!el) return;
-    const text = getInputText(el);
-    if (!text || text.trim().length === 0) return;
-    handleTyping(el, "interval");
-  }, 2000);
-}
 
 function attachElementListeners(el) {
   if (!isEditableElement(el)) return;
@@ -850,7 +840,6 @@ function attachListeners() {
   document.addEventListener("input", onGlobalInput, true);
   document.addEventListener("keydown", onGlobalKeydown, true);
   document.addEventListener("click", onGlobalClick, true);
-  startForceRecheckInterval();
   debugLog("Content script listeners attached");
 }
 

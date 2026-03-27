@@ -18,8 +18,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const prompt = typeof msg.prompt === "string" ? msg.prompt.trim() : "";
 
     if (!prompt) {
-      console.warn("⚠️ Empty prompt");
-      sendResponse(null);
+      sendResponse(fallback("Empty prompt"));
       return;
     }
 
@@ -32,7 +31,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       try {
         const userId = await getUserId();
-        fetch(API_URL, {
+
+        const res = await fetch(API_URL, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -40,43 +40,71 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           },
           body: JSON.stringify({ text: prompt }),
           signal: controller.signal,
-        })
-          .then(async (res) => {
-            clearTimeout(timeoutId);
+        });
 
-            console.log("📡 STATUS:", res.status);
+        clearTimeout(timeoutId);
 
-            const raw = await res.text();
-            console.log("📦 RAW RESPONSE:", raw);
+        console.log("📡 STATUS:", res.status);
 
-            let data = null;
-            try {
-              data = raw ? JSON.parse(raw) : null;
-            } catch (e) {
-              console.error("❌ JSON PARSE ERROR:", e);
+        const raw = await res.text();
+        console.log("📦 RAW RESPONSE:", raw);
+
+        let data = null;
+        try {
+          data = raw ? JSON.parse(raw) : null;
+        } catch (e) {
+          console.error("❌ JSON PARSE ERROR:", e);
+          sendResponse(fallback("Invalid JSON from API"));
+          return;
+        }
+
+        if (!res.ok || !data) {
+          console.error("❌ API ERROR:", data || raw);
+          sendResponse(fallback("API error"));
+          return;
+        }
+
+        // ✅ CRITICAL FIX: ensure decision always exists
+        if (!data.decision) {
+          console.warn("⚠️ Missing decision → fixing");
+
+          data = {
+            decision: "review",
+            score: data.score || 0,
+            reason: data.error || "Invalid response from API",
+            suggestion: data.suggestion || "Try rewriting your prompt",
+            breakdown: data.breakdown || {
+              clarity: 0,
+              structure: 0,
+              actionability: 0
             }
+          };
+        }
 
-            if (!res.ok) {
-              console.error("❌ API ERROR:", data || raw);
-              sendResponse(null);
-              return;
-            }
+        console.log("✅ FINAL DATA:", data);
+        sendResponse(data);
 
-            console.log("✅ FINAL DATA:", data);
-            sendResponse(data);
-          })
-          .catch((err) => {
-            clearTimeout(timeoutId);
-            console.error("❌ FETCH FAILED:", err);
-            sendResponse(null);
-          });
       } catch (err) {
         clearTimeout(timeoutId);
-        console.error("❌ USER ID RESOLVE FAILED:", err);
-        sendResponse(null);
+        console.error("❌ FETCH FAILED:", err);
+        sendResponse(fallback("Network error"));
       }
     })();
 
-    return true; // REQUIRED for async
+    return true;
   }
 });
+
+function fallback(reason) {
+  return {
+    decision: "review",
+    score: 0,
+    reason: reason,
+    suggestion: "Check your input or try again",
+    breakdown: {
+      clarity: 0,
+      structure: 0,
+      actionability: 0
+    }
+  };
+}

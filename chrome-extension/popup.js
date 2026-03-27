@@ -67,7 +67,8 @@ function authFlow(path, email, password, authStatus, updateAuthUI) {
         return res.json();
       })
       .then((data) => {
-        chrome.storage.local.set({ user: data }, () => {
+        const user = data;
+        chrome.storage.local.set({ user: data, email: user.email }, () => {
           updateAuthUI();
           authStatus.style.color = "#16a34a";
           authStatus.textContent =
@@ -128,9 +129,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   openDashboard.addEventListener("click", () => {
     getApiBaseSync((baseClean) => {
-      getUserId().then((userId) => {
-        const url = `${baseClean}/dashboard?user_id=${encodeURIComponent(userId)}`;
-        chrome.tabs.create({ url });
+      getUserId().then(() => {
+        chrome.tabs.create({ url: `${baseClean}/dashboard` });
       });
     });
   });

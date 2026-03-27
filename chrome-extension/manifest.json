@@ -7,9 +7,18 @@
   "permissions": ["storage"],
 
   "host_permissions": [
-    "https://prompt-quality-analyzer.onrender.com/*",
-    "http://localhost/*",
-    "http://127.0.0.1/*"
+    "https://chatgpt.com/*",
+    "https://*.chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://*.openai.com/*",
+    "https://gemini.google.com/*",
+    "https://claude.ai/*",
+    "https://*.claude.ai/*",
+    "https://poe.com/*",
+    "https://*.poe.com/*",
+    "https://perplexity.ai/*",
+    "https://*.perplexity.ai/*",
+    "https://prompt-quality-analyzer.onrender.com/*"
   ],
 
   "background": {
@@ -20,19 +29,23 @@
     {
       "matches": [
         "https://chatgpt.com/*",
-        "https://*.chatgpt.com/*"
+        "https://*.chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://*.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://claude.ai/*",
+        "https://*.claude.ai/*",
+        "https://poe.com/*",
+        "https://*.poe.com/*",
+        "https://perplexity.ai/*",
+        "https://*.perplexity.ai/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "ai-site-allowlist.js",
+        "content-site-guard.js",
+        "content.js"
+      ],
       "css": ["content.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://prompt-quality-analyzer.onrender.com/*",
-        "http://localhost/*",
-        "http://127.0.0.1/*"
-      ],
-      "js": ["dashboard-bridge.js"],
       "run_at": "document_idle"
     }
   ],
