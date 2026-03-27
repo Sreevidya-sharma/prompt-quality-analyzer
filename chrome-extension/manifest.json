@@ -7,17 +7,12 @@
   "permissions": ["storage"],
 
   "host_permissions": [
-    "https://chatgpt.com/*",
-    "https://*.chatgpt.com/*",
     "https://chat.openai.com/*",
-    "https://*.openai.com/*",
+    "https://chatgpt.com/*",
     "https://gemini.google.com/*",
     "https://claude.ai/*",
-    "https://*.claude.ai/*",
     "https://poe.com/*",
-    "https://*.poe.com/*",
     "https://perplexity.ai/*",
-    "https://*.perplexity.ai/*",
     "https://prompt-quality-analyzer.onrender.com/*"
   ],
 
@@ -28,17 +23,12 @@
   "content_scripts": [
     {
       "matches": [
-        "https://chatgpt.com/*",
-        "https://*.chatgpt.com/*",
         "https://chat.openai.com/*",
-        "https://*.openai.com/*",
+        "https://chatgpt.com/*",
         "https://gemini.google.com/*",
         "https://claude.ai/*",
-        "https://*.claude.ai/*",
         "https://poe.com/*",
-        "https://*.poe.com/*",
-        "https://perplexity.ai/*",
-        "https://*.perplexity.ai/*"
+        "https://perplexity.ai/*"
       ],
       "js": [
         "ai-site-allowlist.js",
