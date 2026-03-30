@@ -48,6 +48,15 @@ More detail: [docs/metrics.md](docs/metrics.md), [docs/comparison.md](docs/compa
 - The **background service worker** sends analysis requests to the backend API.
 - The **overlay UI** renders decision, scores, reason, and prompt-improvement suggestions in real time.
 
+## Data Handling
+
+- Prompt text is collected from input fields on supported AI websites for real-time analysis.
+- Prompt text is sent to the backend API over HTTPS for scoring and feedback generation.
+- Prompt data is stored securely for analysis and dashboard features, including analytics and recent-run views.
+- User identifiers are included so backend results can be associated with a user or local extension session.
+
+The extension only reads text from the active prompt input field on supported AI websites and does not access unrelated page content or browsing data.
+
 ## Tech Stack
 
 | Layer        | Technology                          |
@@ -162,21 +171,28 @@ Effective Date: March 27, 2026
 
 This extension is designed to improve prompt quality on supported AI platforms while respecting user privacy.
 
+The extension provides real-time prompt analysis features that require sending user-entered prompt text to a backend service. By using the extension, users acknowledge that their input will be processed as described in this policy.
+
 Data Collection:
 - Email address (used for user identification and dashboard access)
-- User prompts (processed temporarily for analysis)
+- User prompts collected from the active input field on supported AI websites for analysis and feedback
+
+The extension only accesses text from the currently active input field on supported AI websites. It does not access unrelated page content, browsing history, or other data outside of the prompt input.
 
 Data Usage:
 - Prompts are sent securely to a backend API for analysis
 - Email is used to associate activity with a dashboard
-- No prompt data is permanently stored
+- Prompt analysis data is used for analytics and dashboard features
 
 Data Storage:
-- Email may be stored securely
-- Prompt data is NOT stored locally or permanently
+- Email may be stored securely for authentication and account association
+- Prompt data is processed and stored securely for analysis and dashboard features
+
+Prompt data is retained for analytics and functionality purposes and may be stored until it is no longer needed for operational or analytical use. Future versions may include user-controlled data deletion options.
 
 Data Sharing:
 - No user data is sold or shared with third parties
+- Data is not shared with external third-party services for marketing, advertising, or user profiling purposes.
 
 Security:
 - All communication is over HTTPS
